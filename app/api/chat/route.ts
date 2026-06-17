@@ -1,4 +1,4 @@
-import { generateJSON } from "@/app/lib/gemini";
+import { generateJSON } from "@/app/lib/llm";
 import { buildChatSystem, validateCitations } from "@/app/lib/contract";
 import type { Quote, Citation, Persona, ChatTurn } from "@/app/lib/types";
 

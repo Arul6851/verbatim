@@ -1,4 +1,4 @@
-import { generateJSON } from "@/app/lib/gemini";
+import { generateJSON } from "@/app/lib/llm";
 import { quoteBlock } from "@/app/lib/contract";
 import type { Quote, Persona } from "@/app/lib/types";
 
