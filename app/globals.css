@@ -1,19 +1,53 @@
 @import "tailwindcss";
 
+/* ── Verbatim design system ──────────────────────────────────────────────
+   "Evidence on the record" — ink on warm paper. Amber is used ONLY to
+   highlight cited evidence: color == proof. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #f7f6f2; /* app background — warm off-white, not white */
+  --ink: #18170f; /* primary text */
+  --muted: #6e6a5e; /* secondary text */
+  --hairline: #e4e1d7; /* 1px borders, not heavy boxes */
+  --highlight: #ffe45c; /* THE accent — only on cited evidence */
+  --chip-text: #7a5b00; /* citation chip label */
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-hairline: var(--hairline);
+  --color-highlight: var(--highlight);
+  --color-chip-text: var(--chip-text);
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+}
+
+/* Mono eyebrow / RECEIPT label utility */
+.eyebrow {
+  font-family: var(--font-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+/* Respect users who don't want motion: kill all of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }
