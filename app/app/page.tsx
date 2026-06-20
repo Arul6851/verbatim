@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import Link from "next/link";
 import { parseQuotes } from "../lib/parse";
 import { sampleQuotes, SAMPLE_REVIEWS } from "../lib/sample";
@@ -23,6 +23,7 @@ export default function App() {
   const [question, setQuestion] = useState("");
   const [sending, setSending] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const conversationId = useRef(crypto.randomUUID());
 
   const quoteById = (id: string) => quotes.find((q) => q.id === id);
 
@@ -43,6 +44,7 @@ export default function App() {
       setQuotes(qs);
       setPersona(p);
       setMessages([]);
+      conversationId.current = crypto.randomUUID();
       setPhase("chat");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
@@ -69,12 +71,20 @@ export default function App() {
     const q = question.trim();
     if (!q || sending || !persona) return;
 
+    const promptMessageId = crypto.randomUUID();
     const history = messages.map((m) => ({ role: m.role, content: m.content }));
 
     setMessages((prev) => [...prev, { role: "user", content: q }]);
     setQuestion("");
     setSending(true);
     setError(null);
+
+    window.pendo?.trackAgent("prompt", {
+      agentId: "8SjoXAIl6RdAU14P2ofE19uLcvc",
+      conversationId: conversationId.current,
+      messageId: promptMessageId,
+      content: q,
+    });
 
     try {
       const res = await fetch("/api/chat", {
@@ -96,6 +106,13 @@ export default function App() {
           grounded: data.grounded,
         },
       ]);
+
+      window.pendo?.trackAgent("agent_response", {
+        agentId: "8SjoXAIl6RdAU14P2ofE19uLcvc",
+        conversationId: conversationId.current,
+        messageId: crypto.randomUUID(),
+        content: data.reply,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
