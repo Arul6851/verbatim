@@ -27,7 +27,7 @@ export default function App() {
 
   const quoteById = (id: string) => quotes.find((q) => q.id === id);
 
-  async function buildPersona(qs: Quote[]) {
+  async function buildPersona(qs: Quote[], source: "paste" | "sample") {
     setBuilding(true);
     setError(null);
     try {
@@ -46,6 +46,24 @@ export default function App() {
       setMessages([]);
       conversationId.current = crypto.randomUUID();
       setPhase("chat");
+
+      if (typeof window !== "undefined" && (window as any).pendo) {
+        if (source === "paste") {
+          (window as any).pendo.track("persona_built_from_reviews", {
+            quote_count: qs.length,
+            raw_text_length: raw.length,
+            persona_name: p.name,
+            persona_vibe: p.vibe,
+            source: "paste",
+          });
+        } else {
+          (window as any).pendo.track("sample_reviews_loaded", {
+            quote_count: qs.length,
+            persona_name: p.name,
+            persona_vibe: p.vibe,
+          });
+        }
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -59,12 +77,12 @@ export default function App() {
       setError("Paste some reviews first — one per line.");
       return;
     }
-    buildPersona(qs);
+    buildPersona(qs, "paste");
   }
 
   function handleLoadSample() {
     setRaw(SAMPLE_REVIEWS.join("\n"));
-    buildPersona(sampleQuotes());
+    buildPersona(sampleQuotes(), "sample");
   }
 
   async function sendQuestion() {
@@ -113,6 +131,17 @@ export default function App() {
         messageId: crypto.randomUUID(),
         content: data.reply,
       });
+
+      if (typeof window !== "undefined" && (window as any).pendo) {
+        (window as any).pendo.track("interview_question_sent", {
+          question_length: q.length,
+          conversation_turn_number: history.filter((h) => h.role === "user").length + 1,
+          citation_count: data.citations.length,
+          grounded: data.grounded,
+          persona_name: persona.name,
+          total_quotes: quotes.length,
+        });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
@@ -121,6 +150,15 @@ export default function App() {
   }
 
   function reset() {
+    if (typeof window !== "undefined" && (window as any).pendo) {
+      (window as any).pendo.track("interview_session_reset", {
+        total_messages: messages.length,
+        total_user_questions: messages.filter((m) => m.role === "user").length,
+        persona_name: persona?.name,
+        quote_count: quotes.length,
+      });
+    }
+
     setPhase("input");
     setPersona(null);
     setMessages([]);
