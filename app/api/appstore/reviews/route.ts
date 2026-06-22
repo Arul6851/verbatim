@@ -12,7 +12,7 @@ type RssEntry = {
 type RssFeed = { feed?: { entry?: RssEntry[] } };
 
 const PAGES = 5;
-const MAX_REVIEWS = 60;
+const MAX_REVIEWS = 100;
 
 function feedUrl(country: string, appId: string, page: number) {
   return `https://itunes.apple.com/${country}/rss/customerreviews/page=${page}/id=${appId}/sortby=mostrecent/json`;
