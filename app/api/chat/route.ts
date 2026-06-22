@@ -1,6 +1,6 @@
 import { generateJSON } from "@/app/lib/llm";
 import { buildChatSystem, validateCitations } from "@/app/lib/contract";
-import type { Quote, Citation, Persona, ChatTurn } from "@/app/lib/types";
+import type { Quote, Citation, ChatPersona, ChatTurn } from "@/app/lib/types";
 
 export const runtime = "nodejs";
 
@@ -8,7 +8,7 @@ type ChatBody = {
   quotes?: Quote[];
   history?: ChatTurn[];
   question?: string;
-  persona?: Persona;
+  persona?: ChatPersona;
 };
 
 type ModelReply = {
@@ -18,7 +18,7 @@ type ModelReply = {
 };
 
 // Renders prior turns into a compact transcript the model reads as context.
-function historyString(history: ChatTurn[], persona?: Persona): string {
+function historyString(history: ChatTurn[], persona?: ChatPersona): string {
   const name = persona?.name ?? "You";
   return history
     .map((t) => (t.role === "user" ? `Interviewer: ${t.content}` : `${name}: ${t.content}`))

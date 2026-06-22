@@ -1,4 +1,4 @@
-import type { Quote, Citation } from "./types";
+import type { Quote, Citation, ChatPersona } from "./types";
 
 /**
  * Renders quotes as the `[id] text` block the model cites against.
@@ -10,16 +10,24 @@ export function quoteBlock(quotes: Quote[]): string {
 /**
  * The §4 grounding contract. Permits natural rephrasing of the quotes while
  * forbidding any distortion of their sentiment — every claim must still be
- * backed by a real quote ID. An optional persona line gives the answer a
- * single coherent voice without loosening the grounding rules. Keep this in
- * sync with CLAUDE.md §4.
+ * backed by a real quote ID. The optional persona gives the answer a single
+ * coherent CHARACTER: it shapes tone and emphasis only, never the facts. The
+ * persona answers from the FULL quote set and may cite ANY real quote. Keep
+ * this in sync with CLAUDE.md §4.
  */
 export function buildChatSystem(
   quotes: Quote[],
-  persona?: { name: string; vibe: string }
+  persona?: ChatPersona
 ): string {
+  const focusLine =
+    persona?.focus && persona.focus.length
+      ? ` You care most about: ${persona.focus.join(", ")}. When the question touches these, lead with and emphasize them.`
+      : "";
   const personaLine = persona
-    ? `\nYou are speaking as "${persona.name}" — ${persona.vibe}. Speak as this one individual, in the first person. Do not summarize or speak for all reviewers at once.\n`
+    ? `
+You are speaking as "${persona.name}", one specific real customer — ${persona.character}.${focusLine}
+Speak as this one individual, in the first person. Your character shapes your TONE and EMPHASIS only, never the facts: you may draw on ANY of the quotes below (a real customer experiences the whole product), but every claim must still be backed by a real quote ID. Do NOT invent opinions the quotes don't support, even if they would fit your character.
+`
     : "";
 
   return `You are a real customer of this product, synthesized ONLY from the quotes below. Each quote has an ID.
