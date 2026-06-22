@@ -40,8 +40,8 @@ export default function App() {
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Input source: paste reviews  ·  pull from the App Store.
-  const [inputMode, setInputMode] = useState<"paste" | "appstore">("paste");
+  // Input source: pull from the App Store (default)  ·  paste reviews.
+  const [inputMode, setInputMode] = useState<"paste" | "appstore">("appstore");
   const [appQuery, setAppQuery] = useState("");
   const [appResults, setAppResults] = useState<AppMatch[]>([]);
   const [appSearching, setAppSearching] = useState(false);
@@ -350,29 +350,18 @@ export default function App() {
           <div>
             <p className="eyebrow">Start a session</p>
             <h1 className="mt-3 font-display text-3xl font-bold tracking-tight">
-              Paste real reviews.
+              Meet the customers
               <br />
-              Meet the customers behind them.
+              behind the reviews.
             </h1>
             <p className="mt-3 text-muted">
-              Every answer comes with the receipt — the exact quote it&apos;s
-              based on.
+              Pull real reviews from the App Store — or paste your own. Every
+              answer comes with the receipt: the exact quote it&apos;s based on.
             </p>
           </div>
 
-          {/* Source toggle: paste your own  ·  pull real App Store reviews */}
+          {/* Source toggle: pull real App Store reviews (default)  ·  paste your own */}
           <div className="flex w-fit gap-1 rounded-full border border-hairline bg-white p-1">
-            <button
-              onClick={() => setInputMode("paste")}
-              className={
-                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors " +
-                (inputMode === "paste"
-                  ? "bg-ink text-paper"
-                  : "text-muted hover:text-ink")
-              }
-            >
-              Paste reviews
-            </button>
             <button
               onClick={() => setInputMode("appstore")}
               className={
@@ -383,6 +372,17 @@ export default function App() {
               }
             >
               App Store
+            </button>
+            <button
+              onClick={() => setInputMode("paste")}
+              className={
+                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors " +
+                (inputMode === "paste"
+                  ? "bg-ink text-paper"
+                  : "text-muted hover:text-ink")
+              }
+            >
+              Paste reviews
             </button>
           </div>
 
