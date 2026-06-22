@@ -22,6 +22,14 @@ export type ChatPersona = {
   focus?: string[];
 };
 
+/** An App Store search match shown when picking an app to pull reviews from. */
+export type AppMatch = {
+  appId: string;
+  name: string;
+  developer: string;
+  iconUrl: string;
+};
+
 export type ChatTurn = { role: "user" | "persona"; content: string };
 
 export type ChatResponse = {

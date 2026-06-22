@@ -11,6 +11,7 @@ import type {
   ChatResponse,
   SwotData,
   SwotPoint,
+  AppMatch,
 } from "../lib/types";
 
 type Message =
@@ -24,7 +25,10 @@ const AGENT_ID = "8SjoXAIl6RdAU14P2ofE19uLcvc";
 const CURVEBALL = {
   sample: "What did you think of their new VR headset launch?",
   paste: "What did you think of their Super Bowl ad this year?",
+  appstore: "What did you think of their Super Bowl ad this year?",
 } as const;
+
+type Source = keyof typeof CURVEBALL;
 
 export default function App() {
   const [phase, setPhase] = useState<"input" | "select" | "chat">("input");
@@ -32,9 +36,19 @@ export default function App() {
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [personas, setPersonas] = useState<PersonaArchetype[]>([]);
   const [active, setActive] = useState<PersonaArchetype | null>(null);
-  const [source, setSource] = useState<"paste" | "sample">("sample");
+  const [source, setSource] = useState<Source>("sample");
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Input source: paste reviews  ·  pull from the App Store.
+  const [inputMode, setInputMode] = useState<"paste" | "appstore">("paste");
+  const [appQuery, setAppQuery] = useState("");
+  const [appResults, setAppResults] = useState<AppMatch[]>([]);
+  const [appSearching, setAppSearching] = useState(false);
+  const [appFetching, setAppFetching] = useState(false);
+  const [pickedApp, setPickedApp] = useState<AppMatch | null>(null);
+  const [pulledReviews, setPulledReviews] = useState<Quote[] | null>(null);
+  const [appError, setAppError] = useState<string | null>(null);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [question, setQuestion] = useState("");
@@ -51,7 +65,7 @@ export default function App() {
 
   const quoteById = (id: string) => quotes.find((q) => q.id === id);
 
-  async function buildPersonas(qs: Quote[], src: "paste" | "sample") {
+  async function buildPersonas(qs: Quote[], src: Source) {
     setBuilding(true);
     setError(null);
     try {
@@ -78,17 +92,17 @@ export default function App() {
 
       // PRESERVE existing Pendo/Novus events (now carrying persona_count).
       if (typeof window !== "undefined" && window.pendo) {
-        if (src === "paste") {
+        if (src === "sample") {
+          window.pendo.track("sample_reviews_loaded", {
+            quote_count: qs.length,
+            persona_count: data.personas.length,
+          });
+        } else {
           window.pendo.track("persona_built_from_reviews", {
             quote_count: qs.length,
             raw_text_length: raw.length,
             persona_count: data.personas.length,
-            source: "paste",
-          });
-        } else {
-          window.pendo.track("sample_reviews_loaded", {
-            quote_count: qs.length,
-            persona_count: data.personas.length,
+            source: src, // "paste" | "appstore"
           });
         }
       }
@@ -111,6 +125,61 @@ export default function App() {
   function handleLoadSample() {
     setRaw(SAMPLE_REVIEWS.join("\n"));
     buildPersonas(sampleQuotes(), "sample");
+  }
+
+  // ── App Store input source ───────────────────────────────────────────
+  async function searchApps() {
+    const q = appQuery.trim();
+    if (!q || appSearching) return;
+    setAppSearching(true);
+    setAppError(null);
+    setAppResults([]);
+    setPickedApp(null);
+    setPulledReviews(null);
+    try {
+      const res = await fetch("/api/appstore/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Search failed.");
+      setAppResults(data.apps as AppMatch[]);
+    } catch (e) {
+      setAppError(e instanceof Error ? e.message : "Search failed.");
+    } finally {
+      setAppSearching(false);
+    }
+  }
+
+  async function chooseApp(app: AppMatch) {
+    setPickedApp(app);
+    setAppFetching(true);
+    setAppError(null);
+    setPulledReviews(null);
+    try {
+      const res = await fetch("/api/appstore/reviews", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ appId: app.appId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error ?? "Couldn't fetch reviews.");
+      const pulled = data.quotes as Quote[];
+      setPulledReviews(pulled);
+
+      if (typeof window !== "undefined" && window.pendo) {
+        window.pendo.track("reviews_fetched_appstore", {
+          app: app.name,
+          count: pulled.length,
+        });
+      }
+    } catch (e) {
+      setPickedApp(null);
+      setAppError(e instanceof Error ? e.message : "Couldn't fetch reviews.");
+    } finally {
+      setAppFetching(false);
+    }
   }
 
   function pickPersona(p: PersonaArchetype) {
@@ -266,6 +335,10 @@ export default function App() {
     setSwotSelectedId(null);
     setSwotError(null);
     setSelectView("cast");
+    setAppResults([]);
+    setPickedApp(null);
+    setPulledReviews(null);
+    setAppError(null);
   }
 
   // ── INPUT STATE ──────────────────────────────────────────────────────
@@ -287,32 +360,82 @@ export default function App() {
             </p>
           </div>
 
-          <div className="rounded-xl border border-hairline bg-white p-4">
-            <label className="eyebrow">Customer voice · one review per line</label>
-            <textarea
-              className="mt-2 min-h-56 w-full resize-y rounded-lg border border-hairline bg-paper p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-highlight"
-              placeholder="The offline mode is the only reason I still use it…&#10;Sync broke twice this month and I lost a whole note."
-              value={raw}
-              onChange={(e) => setRaw(e.target.value)}
-            />
-            {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-            <div className="mt-4 flex flex-wrap gap-3">
-              <button
-                className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5 disabled:opacity-50"
-                onClick={handleBuildFromPaste}
-                disabled={building}
-              >
-                {building ? "Reading the room…" : "Meet the customers →"}
-              </button>
-              <button
-                className="rounded-full border border-hairline px-5 py-2.5 text-sm font-medium transition-colors hover:bg-paper disabled:opacity-50"
-                onClick={handleLoadSample}
-                disabled={building}
-              >
-                Load sample
-              </button>
-            </div>
+          {/* Source toggle: paste your own  ·  pull real App Store reviews */}
+          <div className="flex w-fit gap-1 rounded-full border border-hairline bg-white p-1">
+            <button
+              onClick={() => setInputMode("paste")}
+              className={
+                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors " +
+                (inputMode === "paste"
+                  ? "bg-ink text-paper"
+                  : "text-muted hover:text-ink")
+              }
+            >
+              Paste reviews
+            </button>
+            <button
+              onClick={() => setInputMode("appstore")}
+              className={
+                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors " +
+                (inputMode === "appstore"
+                  ? "bg-ink text-paper"
+                  : "text-muted hover:text-ink")
+              }
+            >
+              App Store
+            </button>
           </div>
+
+          {inputMode === "paste" ? (
+            <div className="rounded-xl border border-hairline bg-white p-4">
+              <label className="eyebrow">
+                Customer voice · one review per line
+              </label>
+              <textarea
+                className="mt-2 min-h-56 w-full resize-y rounded-lg border border-hairline bg-paper p-3 font-mono text-sm outline-none focus:ring-2 focus:ring-highlight"
+                placeholder="The offline mode is the only reason I still use it…&#10;Sync broke twice this month and I lost a whole note."
+                value={raw}
+                onChange={(e) => setRaw(e.target.value)}
+              />
+              {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+              <div className="mt-4 flex flex-wrap gap-3">
+                <button
+                  className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+                  onClick={handleBuildFromPaste}
+                  disabled={building}
+                >
+                  {building ? "Reading the room…" : "Meet the customers →"}
+                </button>
+                <button
+                  className="rounded-full border border-hairline px-5 py-2.5 text-sm font-medium transition-colors hover:bg-paper disabled:opacity-50"
+                  onClick={handleLoadSample}
+                  disabled={building}
+                >
+                  Load sample
+                </button>
+              </div>
+            </div>
+          ) : (
+            <AppStorePanel
+              query={appQuery}
+              setQuery={setAppQuery}
+              onSearch={searchApps}
+              searching={appSearching}
+              results={appResults}
+              onPick={chooseApp}
+              picked={pickedApp}
+              fetching={appFetching}
+              pulled={pulledReviews}
+              error={appError}
+              building={building}
+              onBuild={() => pulledReviews && buildPersonas(pulledReviews, "appstore")}
+              onBack={() => {
+                setPickedApp(null);
+                setPulledReviews(null);
+                setAppError(null);
+              }}
+            />
+          )}
         </main>
       </div>
     );
@@ -743,6 +866,155 @@ function SwotBoard({
           </p>
         )}
       </aside>
+    </div>
+  );
+}
+
+function AppRow({ app }: { app: AppMatch }) {
+  return (
+    <div className="flex items-center gap-3">
+      {app.iconUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={app.iconUrl}
+          alt=""
+          width={40}
+          height={40}
+          className="h-10 w-10 rounded-lg border border-hairline"
+        />
+      ) : (
+        <span className="grid h-10 w-10 place-items-center rounded-lg bg-ink text-sm font-semibold text-paper">
+          {app.name[0]}
+        </span>
+      )}
+      <div className="min-w-0">
+        <p className="truncate font-display text-sm font-semibold">{app.name}</p>
+        <p className="truncate text-xs text-muted">{app.developer}</p>
+      </div>
+    </div>
+  );
+}
+
+function AppStorePanel({
+  query,
+  setQuery,
+  onSearch,
+  searching,
+  results,
+  onPick,
+  picked,
+  fetching,
+  pulled,
+  error,
+  building,
+  onBuild,
+  onBack,
+}: {
+  query: string;
+  setQuery: (v: string) => void;
+  onSearch: () => void;
+  searching: boolean;
+  results: AppMatch[];
+  onPick: (app: AppMatch) => void;
+  picked: AppMatch | null;
+  fetching: boolean;
+  pulled: Quote[] | null;
+  error: string | null;
+  building: boolean;
+  onBuild: () => void;
+  onBack: () => void;
+}) {
+  // Confirmation / fetching view once an app is picked.
+  if (picked && (fetching || pulled)) {
+    const thin = pulled !== null && pulled.length < 10;
+    return (
+      <div className="rounded-xl border border-hairline bg-white p-5">
+        <AppRow app={picked} />
+        {fetching ? (
+          <p className="mt-4 flex items-center gap-1.5 text-sm text-muted">
+            Pulling reviews from the App Store
+            <span className="inline-flex gap-0.5">
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:-0.15s]" />
+              <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted" />
+            </span>
+          </p>
+        ) : (
+          <>
+            <p className="mt-4 text-sm text-ink">
+              Pulled <span className="font-semibold">{pulled!.length}</span> real
+              reviews from the App Store.
+            </p>
+            {thin && (
+              <p className="mt-1 text-xs text-muted">
+                That&apos;s a bit thin — you&apos;ll get richer personas with
+                more. You can still build, or paste extra reviews.
+              </p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+                onClick={onBuild}
+                disabled={building}
+              >
+                {building ? "Reading the room…" : "Meet the customers →"}
+              </button>
+              <button
+                className="rounded-full border border-hairline px-5 py-2.5 text-sm font-medium transition-colors hover:bg-paper disabled:opacity-50"
+                onClick={onBack}
+                disabled={building}
+              >
+                ← Pick another app
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  // Search + results view.
+  return (
+    <div className="rounded-xl border border-hairline bg-white p-4">
+      <label className="eyebrow">Find an app · pull its real reviews</label>
+      <div className="mt-2 flex gap-2">
+        <input
+          className="flex-1 rounded-full border border-hairline bg-paper px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-highlight"
+          placeholder="Search the App Store (e.g. Notion, Duolingo, Spotify)…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSearch();
+          }}
+        />
+        <button
+          className="rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper transition-transform hover:-translate-y-0.5 disabled:opacity-50"
+          onClick={onSearch}
+          disabled={searching}
+        >
+          {searching ? "Searching…" : "Search"}
+        </button>
+      </div>
+
+      {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+
+      {results.length > 0 && (
+        <ul className="mt-4 flex flex-col gap-2">
+          {results.map((app) => (
+            <li key={app.appId}>
+              <button
+                onClick={() => onPick(app)}
+                className="flex w-full items-center justify-between gap-3 rounded-lg border border-hairline p-3 text-left transition-colors hover:border-ink hover:bg-paper"
+              >
+                <AppRow app={app} />
+                <span className="shrink-0 text-sm font-medium text-ink">
+                  Pull reviews →
+                </span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
