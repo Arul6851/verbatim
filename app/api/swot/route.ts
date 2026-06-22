@@ -14,22 +14,28 @@ const QUADRANTS = [
 ] as const;
 type Quadrant = (typeof QUADRANTS)[number];
 
+// SWOT is a synthesis: cap themes per quadrant so it never degrades into a
+// per-review transcript (which wouldn't scale to thousands of reviews).
+const MAX_THEMES_PER_QUADRANT = 4;
+
 const SYSTEM = `You produce a grounded SWOT analysis of a product from real customer review quotes. Each quote has an ID.
 
-Classify the real signals in the reviews into four lists:
+Your job is SYNTHESIS, not transcription. GROUP many related reviews into a SMALL number of recurring THEMES — never output one point per review. Think like an analyst summarizing thousands of reviews into the handful of patterns that actually matter.
+
+Sort the signals into four lists:
 - strengths: aspects customers praise / like.
 - weaknesses: complaints, problems, frustrations, things that don't work.
 - opportunities: requested features or unmet needs ("I wish…", "I'd pay for…", missing capabilities).
 - threats: churn signals, dealbreakers, cancellations, competitor mentions.
 
 RULES:
-- Each point is ONE concise, specific insight in your own words (max ~15 words).
-- Every point MUST cite the supporting quote ID(s) it is based on.
-- Only include points actually supported by the quotes. Never invent. If a quadrant has no support in the reviews, return an empty array for it.
-- Don't pad: prefer a few sharp, well-supported points over many weak ones.
+- Each "point" is ONE synthesized THEME in your own words (max ~15 words) that GENERALIZES across multiple reviews — not a paraphrase of a single quote.
+- Aim for at most 3–4 themes per quadrant. Merge similar feedback into one theme; fewer, sharper themes are better. If support is thin, return fewer (or none).
+- For each theme, cite the most REPRESENTATIVE quote IDs that back it — cite ALL that clearly fit (this shows how widespread it is), but you need not stretch. A theme should usually be backed by more than one quote when the reviews support it.
+- Only include themes actually supported by the quotes. Never invent. If a quadrant has no support, return an empty array.
 
 Return ONLY valid JSON:
-{"strengths":[{"point":"...","citations":[{"id":"q1"}]}],"weaknesses":[],"opportunities":[],"threats":[]}`;
+{"strengths":[{"point":"...","citations":[{"id":"q1"},{"id":"q9"}]}],"weaknesses":[],"opportunities":[],"threats":[]}`;
 
 type RawPoint = { point?: unknown; citations?: unknown };
 type RawSwot = Partial<Record<Quadrant, unknown>>;
@@ -46,7 +52,8 @@ function cleanQuadrant(raw: unknown, quotes: Quote[]): SwotPoint[] {
     if (citations.length === 0) continue; // drop points with no real receipt
     out.push({ point, citations });
   }
-  return out;
+  // Safety net: keep SWOT a synthesis, never a long transcript of reviews.
+  return out.slice(0, MAX_THEMES_PER_QUADRANT);
 }
 
 export async function POST(request: Request) {
