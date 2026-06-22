@@ -5,7 +5,13 @@ import Link from "next/link";
 import { parseQuotes } from "../lib/parse";
 import { sampleQuotes, SAMPLE_REVIEWS } from "../lib/sample";
 import { HighlightText } from "../components/HighlightText";
-import type { Quote, PersonaArchetype, ChatResponse } from "../lib/types";
+import type {
+  Quote,
+  PersonaArchetype,
+  ChatResponse,
+  SwotData,
+  SwotPoint,
+} from "../lib/types";
 
 type Message =
   | { role: "user"; content: string }
@@ -36,6 +42,13 @@ export default function App() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const conversationId = useRef(crypto.randomUUID());
 
+  // SWOT — a product-level view over the FULL corpus, lazily fetched.
+  const [selectView, setSelectView] = useState<"cast" | "swot">("cast");
+  const [swot, setSwot] = useState<SwotData | null>(null);
+  const [swotLoading, setSwotLoading] = useState(false);
+  const [swotError, setSwotError] = useState<string | null>(null);
+  const [swotSelectedId, setSwotSelectedId] = useState<string | null>(null);
+
   const quoteById = (id: string) => quotes.find((q) => q.id === id);
 
   async function buildPersonas(qs: Quote[], src: "paste" | "sample") {
@@ -57,6 +70,10 @@ export default function App() {
       setSource(src);
       setActive(null);
       setMessages([]);
+      setSwot(null); // fresh corpus → re-derive SWOT on demand
+      setSwotSelectedId(null);
+      setSwotError(null);
+      setSelectView("cast");
       setPhase("select");
 
       // PRESERVE existing Pendo/Novus events (now carrying persona_count).
@@ -110,6 +127,39 @@ export default function App() {
         persona_character: p.character,
         persona_count: personas.length,
       });
+    }
+  }
+
+  function showCast() {
+    setSelectView("cast");
+  }
+
+  async function openSwot() {
+    setSelectView("swot");
+    setSwotSelectedId(null);
+
+    if (typeof window !== "undefined" && window.pendo) {
+      window.pendo.track("swot_viewed", { quote_count: quotes.length });
+    }
+
+    if (swot || swotLoading) return; // already loaded / in flight
+    setSwotLoading(true);
+    setSwotError(null);
+    try {
+      const res = await fetch("/api/swot", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ quotes }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Couldn't read the receipts.");
+      }
+      setSwot(await res.json());
+    } catch (e) {
+      setSwotError(e instanceof Error ? e.message : "Something went wrong.");
+    } finally {
+      setSwotLoading(false);
     }
   }
 
@@ -212,6 +262,10 @@ export default function App() {
     setMessages([]);
     setSelectedId(null);
     setError(null);
+    setSwot(null);
+    setSwotSelectedId(null);
+    setSwotError(null);
+    setSelectView("cast");
   }
 
   // ── INPUT STATE ──────────────────────────────────────────────────────
@@ -264,24 +318,28 @@ export default function App() {
     );
   }
 
-  // ── SELECT STATE ─────────────────────────────────────────────────────
+  // ── SELECT STATE (the cast  +  grounded SWOT) ─────────────────────────
   if (phase === "select") {
     return (
       <div className="flex-1">
         <TopBar />
-        <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-12">
+        <main className="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-12">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="eyebrow">The cast</p>
+              <p className="eyebrow">
+                {selectView === "cast" ? "The cast" : "Grounded SWOT"}
+              </p>
               <h1 className="mt-2 font-display text-3xl font-bold tracking-tight">
-                {personas.length > 1
-                  ? `${personas.length} customers hiding in your reviews`
-                  : "The customer behind your reviews"}
+                {selectView === "cast"
+                  ? personas.length > 1
+                    ? `${personas.length} customers hiding in your reviews`
+                    : "The customer behind your reviews"
+                  : "Your market, on the record"}
               </h1>
-              <p className="mt-2 text-muted">
-                Each is a real archetype from the {quotes.length} quotes. Pick
-                one to interview — they answer in character, always with a
-                receipt.
+              <p className="mt-2 max-w-2xl text-muted">
+                {selectView === "cast"
+                  ? `Each is a real archetype from the ${quotes.length} quotes. Pick one to interview — they answer in character, always with a receipt.`
+                  : `Strengths, weaknesses, opportunities and threats pulled from all ${quotes.length} quotes — every point carries its receipt.`}
               </p>
             </div>
             <button
@@ -292,40 +350,77 @@ export default function App() {
             </button>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {personas.map((p) => (
-              <button
-                key={p.id}
-                onClick={() => pickPersona(p)}
-                className="group flex h-full flex-col rounded-xl border border-hairline bg-white p-5 text-left transition-all hover:-translate-y-0.5 hover:border-ink"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-base font-semibold text-paper">
-                    {p.name[0]}
-                  </span>
-                  <span className="font-display text-lg font-bold tracking-tight">
-                    {p.name}
-                  </span>
-                </div>
-                <p className="mt-3 text-sm text-muted">{p.character}</p>
-                {p.focus.length > 0 && (
-                  <div className="mt-3 flex flex-wrap gap-1.5">
-                    {p.focus.map((f) => (
-                      <span
-                        key={f}
-                        className="rounded-md bg-paper px-2 py-0.5 font-mono text-[11px] text-chip-text"
-                      >
-                        {f}
-                      </span>
-                    ))}
-                  </div>
-                )}
-                <span className="mt-4 text-sm font-medium text-ink group-hover:underline">
-                  Interview {p.name} →
-                </span>
-              </button>
-            ))}
+          {/* Toggle: interview a persona  ·  view the SWOT */}
+          <div className="flex w-fit gap-1 rounded-full border border-hairline bg-white p-1">
+            <button
+              onClick={showCast}
+              className={
+                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors " +
+                (selectView === "cast"
+                  ? "bg-ink text-paper"
+                  : "text-muted hover:text-ink")
+              }
+            >
+              The cast
+            </button>
+            <button
+              onClick={openSwot}
+              className={
+                "rounded-full px-4 py-1.5 text-sm font-medium transition-colors " +
+                (selectView === "swot"
+                  ? "bg-ink text-paper"
+                  : "text-muted hover:text-ink")
+              }
+            >
+              SWOT
+            </button>
           </div>
+
+          {selectView === "cast" ? (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {personas.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => pickPersona(p)}
+                  className="group flex h-full flex-col rounded-xl border border-hairline bg-white p-5 text-left transition-all hover:-translate-y-0.5 hover:border-ink"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="grid h-11 w-11 place-items-center rounded-full bg-ink text-base font-semibold text-paper">
+                      {p.name[0]}
+                    </span>
+                    <span className="font-display text-lg font-bold tracking-tight">
+                      {p.name}
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm text-muted">{p.character}</p>
+                  {p.focus.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {p.focus.map((f) => (
+                        <span
+                          key={f}
+                          className="rounded-md bg-paper px-2 py-0.5 font-mono text-[11px] text-chip-text"
+                        >
+                          {f}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <span className="mt-4 text-sm font-medium text-ink group-hover:underline">
+                    Interview {p.name} →
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <SwotBoard
+              swot={swot}
+              loading={swotLoading}
+              error={swotError}
+              quoteById={quoteById}
+              selectedId={swotSelectedId}
+              onSelect={setSwotSelectedId}
+            />
+          )}
         </main>
       </div>
     );
@@ -527,5 +622,127 @@ function ThinkingDots({ name }: { name: string }) {
         <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted" />
       </span>
     </p>
+  );
+}
+
+const QUADRANTS: {
+  key: keyof SwotData;
+  label: string;
+  hint: string;
+}[] = [
+  { key: "strengths", label: "Strengths", hint: "What customers praise" },
+  { key: "weaknesses", label: "Weaknesses", hint: "Complaints & problems" },
+  {
+    key: "opportunities",
+    label: "Opportunities",
+    hint: "Requested / unmet needs",
+  },
+  { key: "threats", label: "Threats", hint: "Churn, dealbreakers, rivals" },
+];
+
+function SwotBoard({
+  swot,
+  loading,
+  error,
+  quoteById,
+  selectedId,
+  onSelect,
+}: {
+  swot: SwotData | null;
+  loading: boolean;
+  error: string | null;
+  quoteById: (id: string) => Quote | undefined;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const selectedQuote = selectedId ? quoteById(selectedId) : null;
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center rounded-xl border border-hairline bg-white">
+        <p className="flex items-center gap-1.5 text-sm text-muted">
+          Reading the receipts
+          <span className="inline-flex gap-0.5">
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:-0.3s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted [animation-delay:-0.15s]" />
+            <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted" />
+          </span>
+        </p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return <p className="text-sm text-red-600">{error}</p>;
+  }
+
+  if (!swot) return null;
+
+  return (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-[1fr_320px]">
+      {/* 2×2 quadrants */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        {QUADRANTS.map((q) => {
+          const points: SwotPoint[] = swot[q.key];
+          return (
+            <div
+              key={q.key}
+              className="flex flex-col rounded-xl border border-hairline bg-white p-5"
+            >
+              <div className="mb-3">
+                <h3 className="eyebrow">{q.label}</h3>
+                <p className="mt-0.5 text-xs text-muted">{q.hint}</p>
+              </div>
+              {points.length === 0 ? (
+                <p className="text-sm italic text-muted/70">
+                  nothing in the reviews here yet
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-3">
+                  {points.map((pt, i) => (
+                    <li key={i} className="text-sm leading-relaxed text-ink">
+                      {pt.point}
+                      <span className="ml-1.5 inline-flex flex-wrap gap-1 align-middle">
+                        {pt.citations.map((c) => (
+                          <button
+                            key={c.id}
+                            onClick={() => onSelect(c.id)}
+                            className={
+                              "rounded-md border px-1.5 py-0.5 font-mono text-xs transition-colors " +
+                              (selectedId === c.id
+                                ? "border-highlight bg-highlight text-chip-text"
+                                : "border-hairline bg-paper text-chip-text hover:bg-highlight/40")
+                            }
+                          >
+                            {c.id}
+                          </button>
+                        ))}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Shared Evidence receipt-tether */}
+      <aside className="h-fit rounded-xl border border-hairline bg-white p-5 md:sticky md:top-6">
+        <h2 className="eyebrow mb-3">
+          Evidence {selectedQuote ? `· ${selectedQuote.id}` : ""}
+        </h2>
+        {selectedQuote ? (
+          <p key={selectedQuote.id} className="text-sm leading-relaxed text-ink">
+            <HighlightText active>{selectedQuote.text}</HighlightText>
+          </p>
+        ) : (
+          <p className="text-sm text-muted">
+            Click a citation chip to swipe the highlighter across the exact
+            quote behind a point.
+          </p>
+        )}
+      </aside>
+    </div>
   );
 }

@@ -29,3 +29,13 @@ export type ChatResponse = {
   citations: Citation[];
   grounded: boolean;
 };
+
+/** One grounded SWOT insight + the real quotes that back it. */
+export type SwotPoint = { point: string; citations: Citation[] };
+
+export type SwotData = {
+  strengths: SwotPoint[];
+  weaknesses: SwotPoint[];
+  opportunities: SwotPoint[];
+  threats: SwotPoint[];
+};
